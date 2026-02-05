@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": false,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@/OSDL/*": ["packages/osdl/core/*"],
+      "@/osdl/*": ["packages/osdl/core/osdl/*"],
+      "@/OSDL.types": ["packages/osdl/core/OSDL.types.ts"],
+      "@/ComponentRegistry": ["packages/osdl/core/ComponentRegistry.tsx"]
+    }
+  },
+  "include": ["src", "packages/osdl/core"],
+  "references": [{ "path": "./tsconfig.node.json" }]
+}
