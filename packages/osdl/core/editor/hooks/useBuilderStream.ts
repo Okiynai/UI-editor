@@ -1203,13 +1203,12 @@ export const useBuilderStream = (iframeCommunicationManager?: IframeCommunicatio
 
   const startStream = useCallback(async (
     prompt: string,
-    referencedSections: Array<{ pageId: string; nodeId: string; pageName?: string }> = [],
     imageUrls: Array<string> = [],
     sessionId?: string | null,
     modelTier: 'low' | 'mid' | 'high' = 'mid'
   ) => {
 
-    console.log('[useBuilderStream] startStream called', { prompt, referencedSections, isAgentBusy, conversationId });
+    console.log('[useBuilderStream] startStream called', { prompt, isAgentBusy, conversationId });
     if (isAgentBusy) {
       console.warn('[useBuilderStream] Agent is already busy.');
       return;
@@ -1233,24 +1232,13 @@ export const useBuilderStream = (iframeCommunicationManager?: IframeCommunicatio
       }
 
 
-      // Enhance the prompt with referenced sections if any
-      let enhancedPrompt = prompt;
-      if (referencedSections.length > 0) {
-        const sectionsText = referencedSections.map(section =>
-          `${section.pageId}:${section.nodeId}`
-        ).join(', ');
-        enhancedPrompt = `${prompt}\n\nReferenced sections: ${sectionsText}`;
-      }
       console.log('--- [useBuilderStream] currentPageId ---', currentPageId);
-
-
       const response = await startAgentStream({
-        prompt: enhancedPrompt,
+        prompt,
         sessionId: sessionId || conversationId,
         source: 'builder',
         context: {
           currentPageId: currentPageId || 'home',
-          referencedSections,
           userId: session.user?.id,
           shopId: session.shop?.id,
           imageUrls: imageUrls || []

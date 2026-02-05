@@ -1,5 +1,4 @@
 export type SidebarPanel = "chat" | "settings" | "assets" | "layout";
-export type ChatTab = "chat" | "smart-editor";
 export type ScreenSize = "desktop" | "tablet" | "mobile" | "resizable";
 
 export type Page = {
@@ -54,7 +53,6 @@ export type Asset = {
 export type BuilderState = {
     // Panel states
     activePanel: SidebarPanel;
-    chatTab: ChatTab;
     screenSize: ScreenSize;
     showSaveDropdown: boolean;
     panelPosition: { top: number; left: number };
@@ -105,7 +103,6 @@ export type BuilderState = {
 export type BuilderActions = {
     // Panel actions
     setActivePanel: (panel: SidebarPanel) => void;
-    setChatTab: (tab: ChatTab) => void;
     setScreenSize: (size: ScreenSize) => void;
     setShowSaveDropdown: (show: boolean) => void;
     setPanelPosition: (position: { top: number; left: number }) => void;
@@ -160,10 +157,5 @@ export interface AgentStreamEvent {
     timestamp: number;
     sessionId?: string;
     role?: 'user' | 'assistant';
-    referencedSections?: Array<{
-        pageId: string;
-        nodeId: string;
-        pageName: string;
-    }>;
     images?: string[];
 }

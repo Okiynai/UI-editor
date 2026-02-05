@@ -9,12 +9,10 @@ import {
   currentPageIdAtom,
   SelectedNode,
   textEditStateAtom,
-  currentPageNameAtom,
 } from '@/store/editor';
 import { Node, PageDefinition, LayoutConfig } from '@/OSDL.types';
 import NodeRenderer, { NodeRendererProps } from '@/osdl/NodeRenderer';
-import { ReferenceSectionPayload } from '@/app/shop-manager/website/edit/[sessId]/types/iframe-communication';
-import { Edit, CopyPlus, Trash2, ArrowUp, ArrowDown, CornerUpLeft, Plus } from 'lucide-react';
+import { Edit, CopyPlus, Trash2, ArrowUp, ArrowDown, Plus } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useRef, useState, useEffect } from 'react';
 import ComponentRegistry from '@/ComponentRegistry';
@@ -95,7 +93,6 @@ export const EditorNodeWrapper: React.FC<EditorNodeWrapperProps> = ({ nodeSchema
   const [interactionMode, setInteractionMode] = useAtom(interactionModeAtom);
   const [textEditState, setTextEditState] = useAtom(textEditStateAtom);
   const [currentPageId] = useAtom(currentPageIdAtom);
-  const [currentPageName] = useAtom(currentPageNameAtom);
 
   const isSelected = selectedNodes.some(
     (sel) => sel.pageId === currentPageId && sel.nodeId === nodeSchema.id
@@ -122,42 +119,6 @@ export const EditorNodeWrapper: React.FC<EditorNodeWrapperProps> = ({ nodeSchema
       return; // Don't handle clicks on toolbar elements, plus buttons, or modal
     }
 
-    if(e.ctrlKey) {
-      // Find the actual node that was clicked by traversing up the DOM tree
-      let clickedNodeId = nodeSchema.id;
-      let currentElement: HTMLElement | null = target;
-
-      // Traverse up the DOM tree to find the closest element with data-osdl-id
-      while (currentElement && currentElement !== document.body) {
-        const osdlId = currentElement.getAttribute('data-osdl-id');
-        if (osdlId) {
-          clickedNodeId = osdlId;
-          break;
-        }
-        currentElement = currentElement.parentElement;
-      }
-
-      // If we found a different node ID, this means we clicked on a nested element
-      // and we should handle the selection for that specific node, not this wrapper
-      if (clickedNodeId !== nodeSchema.id) {
-        // Don't handle the selection here - let the correct wrapper handle it
-        return;
-      }
-
-      e.preventDefault();
-      e.stopPropagation();
-      e.nativeEvent.stopImmediatePropagation();
-      e.nativeEvent.stopPropagation();
-
-      const sectionName = nodeSchema.name || (nodeSchema.type === 'atom' && nodeSchema.atomType) || nodeSchema.type;
-      const message = {
-        type: 'REFERENCE_SECTION',
-        payload: { sectionName, sectionId: nodeSchema.id, pageId: currentPageId, pageName: currentPageName } as ReferenceSectionPayload
-      };
-      window.parent.postMessage(message, '*');
-      return;
-    }
-
     if (!isInspectMode || isBeingEditedByAI) return; // Only respond to clicks in inspect mode
 
     // Find the actual node that was clicked by traversing up the DOM tree
@@ -178,22 +139,6 @@ export const EditorNodeWrapper: React.FC<EditorNodeWrapperProps> = ({ nodeSchema
     // and we should handle the selection for that specific node, not this wrapper
     if (clickedNodeId !== nodeSchema.id) {
       // Don't handle the selection here - let the correct wrapper handle it
-      return;
-    }
-
-    // Handle Ctrl+click for reference (after determining the correct node)
-    if (e.ctrlKey) {
-      e.preventDefault();
-      e.stopPropagation();
-      e.nativeEvent.stopImmediatePropagation();
-      e.nativeEvent.stopPropagation();
-
-      const sectionName = nodeSchema.name || (nodeSchema.type === 'atom' && nodeSchema.atomType) || nodeSchema.type;
-      const message = {
-        type: 'REFERENCE_SECTION',
-        payload: { sectionName, sectionId: nodeSchema.id, pageId: currentPageId, pageName: currentPageName } as ReferenceSectionPayload
-      };
-      window.parent.postMessage(message, '*');
       return;
     }
 
@@ -673,16 +618,6 @@ const FloatingToolbar: React.FC<{
   const handleActionClick = (e: React.MouseEvent, action: string) => {
     e.stopPropagation();
 
-    if (action === 'reference') {
-      const sectionName = nodeSchema.name || (nodeSchema.type === 'atom' && nodeSchema.atomType) || nodeSchema.type;
-      const message = {
-        type: 'REFERENCE_SECTION',
-        payload: { sectionName, sectionId: nodeSchema.id, pageId: currentPageId, pageName: currentPageName } as ReferenceSectionPayload
-      };
-      window.parent.postMessage(message, '*');
-      return;
-    }
-
     if (action === 'edit') {
       const message = {
         type: 'EDIT_NODE',
@@ -816,10 +751,6 @@ const FloatingToolbar: React.FC<{
       onClick={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}
     >
-      <button className="p-1.5 hover:bg-zinc-700 rounded-md transition-colors duration-150 flex items-center justify-center"
-        title="Reference" onClick={(e) => handleActionClick(e, 'reference')}>
-        <CornerUpLeft className="text-white" strokeWidth={1.5} size={16} />
-      </button>
       <button className="p-1.5 hover:bg-zinc-700 rounded-md transition-colors duration-150"
         title="Edit" onClick={(e) => handleActionClick(e, 'edit')}>
         <Edit className="text-white" strokeWidth={1.5} size={16} />
