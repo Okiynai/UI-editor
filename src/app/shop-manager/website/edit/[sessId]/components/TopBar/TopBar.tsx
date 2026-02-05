@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { LogOut, Undo2, Redo2, SquareMousePointer, Eye, EyeOff } from 'lucide-react';
 import { PageDropdown } from './PageDropdown';
 import { LocaleDropdown } from './LocaleDropdown';
@@ -61,6 +61,10 @@ export const TopBar = ({
     const [isPreview] = useAtom(isInPreviewModeAtom);
     const [isInspectMode, setIsInspectMode] = useAtom(isInspectModeAtom);
     const [isPreviewMode, setIsPreviewMode] = useAtom(isInPreviewModeAtom);
+    const topBarRef = useRef<HTMLDivElement>(null);
+    const [topBarHeight, setTopBarHeight] = useState(56);
+    const [isPreviewBarVisible, setIsPreviewBarVisible] = useState(true);
+    const [isHoveringTopBar, setIsHoveringTopBar] = useState(false);
 
     // used in the preview function.
     const [localTmpInspectMode, setLocalTmpInspectMode] = useState(isInspectMode);
@@ -92,10 +96,49 @@ export const TopBar = ({
         setIsPreviewMode(!isPreviewMode);
     };
 
+    useLayoutEffect(() => {
+        if (!topBarRef.current) return;
+        const updateHeight = () => {
+            if (!topBarRef.current) return;
+            setTopBarHeight(topBarRef.current.getBoundingClientRect().height || 56);
+        };
+        updateHeight();
+        const observer = new ResizeObserver(updateHeight);
+        observer.observe(topBarRef.current);
+        return () => observer.disconnect();
+    }, []);
+
+    useEffect(() => {
+        if (!isPreview) {
+            setIsPreviewBarVisible(true);
+            return;
+        }
+
+        const handleMouseMove = (event: MouseEvent) => {
+            const triggerHeight = Math.max(0, topBarHeight / 2);
+            const shouldShow = event.clientY <= triggerHeight || isHoveringTopBar;
+            setIsPreviewBarVisible(shouldShow);
+        };
+
+        window.addEventListener('mousemove', handleMouseMove);
+        return () => window.removeEventListener('mousemove', handleMouseMove);
+    }, [isPreview, topBarHeight, isHoveringTopBar]);
+
     return (
         <>
             {/* Top Toolbar - spans full width */}
-            <div className="flex-shrink-0 h-14 bg-white border-b border-gray-100 flex items-center justify-between px-4">
+            <div
+                ref={topBarRef}
+                onMouseEnter={() => setIsHoveringTopBar(true)}
+                onMouseLeave={() => setIsHoveringTopBar(false)}
+                className={`h-14 bg-white border-b border-gray-100 flex items-center justify-between px-4 transition-transform duration-200 ${
+                    isPreview
+                        ? `fixed top-0 left-0 right-0 z-40 ${
+                            isPreviewBarVisible ? 'translate-y-0 opacity-100 pointer-events-auto' : '-translate-y-full opacity-0 pointer-events-none'
+                        }`
+                        : 'flex-shrink-0'
+                }`}
+            >
                 {/* Left Section */}
                 <div className="flex items-center space-x-3 min-w-0">
                     <button 
