@@ -2,3 +2,4 @@
 - Removed the top bar user mode toggle and its session dependency in the editor. (2026-02-05)
 - Updated preview mode to make the iframe area full height and hide the top bar unless the cursor is near the top edge; top bar now overlays with higher z-index. (2026-02-05)
 - Removed Smart Editor references: eliminated Smart Editor tab UI, reference selection handling, and reference button in the editor toolbar. (2026-02-05)
+- Set Inter as default editor font via global CSS variables and removed Next font loader shim usage. (2026-02-05)
