@@ -1,1 +1,2 @@
 - Removed the sidebar user avatar panel and its credit/subscription UI; cleaned related types. (2026-02-05)
+- Removed the top bar user mode toggle and its session dependency in the editor. (2026-02-05)
