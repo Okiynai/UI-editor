@@ -1,0 +1,1 @@
+- Removed the sidebar user avatar panel and its credit/subscription UI; cleaned related types. (2026-02-05)
