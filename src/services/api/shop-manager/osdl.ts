@@ -11,7 +11,7 @@ const PAGES_KEY = 'osdl-demo-pages';
 const DB_NAME = 'osdl-demo-store';
 const DB_VERSION = 1;
 const STORE_NAME = 'kv';
-const FORCE_DEFAULT_DEMO = true;
+const FORCE_DEFAULT_DEMO = false;
 
 type KVRecord = {
   key: string;

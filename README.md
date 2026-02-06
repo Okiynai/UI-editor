@@ -14,6 +14,12 @@ References:
 - Okiynai: https://okiynai.com
 - OSDL: https://github.com/okiynai/osdl
 
+## Demo
+
+![Editor Demo 1](images/editor-demo-1.png)
+![Editor Demo 2](images/editor-demo-2.png)
+![Editor Demo 3](images/editor-demo-3.png)
+
 ## What You’ll Find Here
 
 - Editor shell UI (panels, controls, page tools)
