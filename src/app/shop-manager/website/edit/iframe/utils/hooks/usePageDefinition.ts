@@ -1,15 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { PageDefinition } from "@/OSDL/OSDL.types";
 import { getPageDefinition, getManagerPageDefinition } from "@/services/api/osdl/osdl";
-import { getSiteById } from "@/services/api/shop-manager/sites";
-
-// DEMOS for testing
-import { getBrandBreederDemo } from "@/osdl-demos/brand-breeder-demo";
 import { getDemoPageDefinition } from "@/osdl-demos/default-demo";
-import { getSmolDemoPageDefinition } from "@/osdl-demos/smol-demo";
-import { getCheckoutDemoPageDefinition } from "@/osdl-demos/checkout-demo";
-import { getOkiynaiClassicDemo } from "@/osdl-demos/okiynai-classic-demo";
-import { getUserSettingsDemoPageDefinition } from "@/osdl-demos/user-settings-demo";
 
 interface UsePageDefinitionReturn {
   pageDefinition: PageDefinition | null;
@@ -33,7 +25,7 @@ export function usePageDefinition(): UsePageDefinitionReturn {
   const loadedPagesRef = useRef<{ [key: string]: { page: PageDefinition, original: PageDefinition } }>({});
 
   // Check if we should use demo mode (this should match the useDemo variable in the iframe page)
-  const useDemo = null as 'brand-breeder' | 'default' | 'smol' | 'user-settings' | 'checkout' | 'okiynai-classic' | 'product-page' | null ;
+  const useDemo = null as 'default' | null;
   
   // NEW: Use demo content (nodes and data sources) but keep real page metadata
   const useDemoContent = false;
@@ -64,28 +56,8 @@ export function usePageDefinition(): UsePageDefinitionReturn {
         const routeParams = { subdomain: subDomain, path: pageRoute };
         
         switch (useDemo) {
-          case 'brand-breeder':
-            demoPage = getBrandBreederDemo(routeParams);
-            break;
           case 'default':
             demoPage = getDemoPageDefinition(routeParams);
-            break;
-          case 'smol':
-            demoPage = getSmolDemoPageDefinition(routeParams);
-            break;
-          case 'user-settings':
-            demoPage = getUserSettingsDemoPageDefinition(routeParams);
-            break;
-          case 'checkout':
-            demoPage = getCheckoutDemoPageDefinition(routeParams);
-            break;
-          case 'okiynai-classic':
-            demoPage = getOkiynaiClassicDemo(routeParams);
-            break;
-          case 'product-page':
-            // Lazy import to avoid increasing initial bundle unnecessarily
-            const { getProductPageDemo } = await import('@/osdl-demos/product-page-demo');
-            demoPage = getProductPageDemo(routeParams);
             break;
           default:
             throw new Error(`Unknown demo type: ${useDemo}`);
@@ -131,23 +103,8 @@ export function usePageDefinition(): UsePageDefinitionReturn {
         let demoPage: PageDefinition;
         
         switch (useDemo) {
-          case 'brand-breeder':
-            demoPage = getBrandBreederDemo(routeParams);
-            break;
           case 'default':
             demoPage = getDemoPageDefinition(routeParams);
-            break;
-          case 'smol':
-            demoPage = getSmolDemoPageDefinition(routeParams);
-            break;
-          case 'user-settings':
-            demoPage = getUserSettingsDemoPageDefinition(routeParams);
-            break;
-          case 'checkout':
-            demoPage = getCheckoutDemoPageDefinition(routeParams);
-            break;
-          case 'okiynai-classic':
-            demoPage = getOkiynaiClassicDemo(routeParams);
             break;
           default:
             throw new Error(`Unknown demo type: ${useDemo}`);

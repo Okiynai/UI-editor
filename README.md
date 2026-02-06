@@ -21,7 +21,7 @@ References:
 - Message-based interaction between parent and iframe (`postMessage`)
 - OSDL core integration under `packages/osdl/core`
 - Prebuilt section examples under `src/prebuilt-sections`
-- Demo pages under `src/osdl-demos`
+- Default demo page under `src/osdl-demos/default-demo.ts`
 
 ## Project Layout
 

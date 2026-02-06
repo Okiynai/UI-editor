@@ -91,13 +91,13 @@ What’s included:
 - Renderer + runtime: `core/osdl/`
 - Type definitions: `core/OSDL.types.ts`
 - Atoms and components: `core/osdl/atoms/`, `core/osdl/components/`
-- Page demos: `examples/osdl-demos/`
+- Default page demo: `examples/osdl-demos/default-demo.ts`
 - Prebuilt sections: `examples/prebuilt-sections/`
 - Renderer usage example: `examples/renderer-usage/`
 
 How to explore:
 1. Start with `docs/OSDL.md` for the spec.
-2. Check `examples/osdl-demos/` for full page definitions.
+2. Check `examples/osdl-demos/default-demo.ts` for a full page definition.
 3. See `examples/renderer-usage/` for wiring the renderer in a Next.js app.
 4. Dive into `core/OSDL.types.ts` for the full schema.
 
