@@ -230,7 +230,7 @@ const CartSlider = ({ shopId, redirect, accentColor, isCartLoading, nodeSchema }
       />
 
       {isCartOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-[9998] transition-opacity" onClick={handleClose} />
+        <div className="fixed inset-0 bg-black/50 z-[9998] transition-opacity" onClick={handleClose} />
       )}
 
       <div 
@@ -582,5 +582,4 @@ export default function CartComponent({ shopId, redirect, accentColor, showBadge
     </>
   );
 }
-
 

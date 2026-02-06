@@ -21,6 +21,48 @@ interface OkiynaiPageWithDataContextProps {
   userInfoOverride?: any; // allow editor to provide dummy user info
 }
 
+const DYNAMIC_ROUTE_SEGMENT_REGEX = /\[([^\]]+)\]/g;
+const ROUTE_TEMPLATE_BINDING_REGEX = /{{\s*(?:route\.|page\.routeParams\.|page\.slugs\.|page\.slug(?:\b|Name\b))/;
+
+type ExpectedInitRqlReason =
+  | 'missing-endpoint'
+  | 'missing-route-params'
+  | 'empty-queries';
+
+const extractDynamicRouteParamNames = (route: string | undefined): string[] => {
+  if (!route) return [];
+  const names = new Set<string>();
+  const matches = route.matchAll(DYNAMIC_ROUTE_SEGMENT_REGEX);
+  for (const match of matches) {
+    if (match[1]) names.add(match[1]);
+  }
+  return Array.from(names);
+};
+
+const hasRouteBindingInValue = (value: unknown): boolean => {
+  if (typeof value === 'string') {
+    return ROUTE_TEMPLATE_BINDING_REGEX.test(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value.some((entry) => hasRouteBindingInValue(entry));
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>).some((entry) => hasRouteBindingInValue(entry));
+  }
+
+  return false;
+};
+
+const logExpectedInitRql = (reason: ExpectedInitRqlReason, details?: Record<string, unknown>) => {
+  console.info(`[DataContext][RQL][expected-init:${reason}]`, details || {});
+};
+
+const logActionableRql = (message: string, details?: unknown) => {
+  console.error(`[DataContext][RQL][actionable] ${message}`, details);
+};
+
 // Cache for data requirements to avoid refetching identical requests
 interface RequirementCacheEntry {
   data: any;
@@ -63,12 +105,70 @@ const OkiynaiPageWithDataContext: React.FC<OkiynaiPageWithDataContextProps> = ({
   // Cache for data requirements (using useRef to persist across renders)
   const requirementCache = useRef<Map<string, RequirementCacheEntry>>(new Map());
 
-  const pageInfo: PageInfo = useMemo(() => ({
-    id: pageDefinition.id,
-    name: pageDefinition.name,
-    route: pageDefinition.route,
-    routeParams: routeParams,
-  }), [pageDefinition.id, pageDefinition.name, pageDefinition.route, routeParams]);
+  const dynamicRouteParamNames = useMemo(
+    () => extractDynamicRouteParamNames(pageDefinition.route),
+    [pageDefinition.route]
+  );
+
+  const routeResolution = useMemo(() => {
+    if (!dynamicRouteParamNames.length) {
+      return {
+        params: routeParams || {},
+        missingDynamicParams: [] as string[],
+      };
+    }
+
+    const explicitRouteParams = routeParams || {};
+    const persistedSlugOverrides =
+      pageDefinition.systemPageProps &&
+      typeof pageDefinition.systemPageProps.slugOverrides === 'object' &&
+      pageDefinition.systemPageProps.slugOverrides !== null
+        ? (pageDefinition.systemPageProps.slugOverrides as Record<string, string>)
+        : {};
+
+    const merged: Record<string, string> = {};
+    const missingDynamicParams: string[] = [];
+    dynamicRouteParamNames.forEach((paramName) => {
+      const explicit = explicitRouteParams[paramName];
+      const persisted = persistedSlugOverrides[paramName];
+
+      if (typeof explicit === 'string' && explicit.trim()) {
+        merged[paramName] = explicit.trim();
+        return;
+      }
+
+      if (typeof persisted === 'string' && persisted.trim()) {
+        merged[paramName] = persisted.trim();
+        return;
+      }
+
+      // Standalone-safe fallback so templates can always read a slug value.
+      merged[paramName] = `sample-${paramName}`;
+      missingDynamicParams.push(paramName);
+    });
+
+    return {
+      params: merged,
+      missingDynamicParams,
+    };
+  }, [dynamicRouteParamNames, pageDefinition.systemPageProps, routeParams]);
+
+  const resolvedRouteParams = routeResolution.params;
+
+  const pageInfo: PageInfo = useMemo(() => {
+    const firstSlugName = Object.keys(resolvedRouteParams)[0];
+    const firstSlugValue = firstSlugName ? resolvedRouteParams[firstSlugName] : undefined;
+
+    return {
+      id: pageDefinition.id,
+      name: pageDefinition.name,
+      route: pageDefinition.route,
+      routeParams: resolvedRouteParams,
+      slugName: firstSlugName,
+      slug: firstSlugValue,
+      slugs: resolvedRouteParams,
+    };
+  }, [pageDefinition.id, pageDefinition.name, pageDefinition.route, resolvedRouteParams]);
 
   // User info from session (can be overridden by editor)
   // In editor mode, default to unauthenticated unless userInfoOverride is provided
@@ -154,7 +254,28 @@ const OkiynaiPageWithDataContext: React.FC<OkiynaiPageWithDataContextProps> = ({
       if (pageDefinition.dataSource.type === 'rql') {
         console.log('[DataContext] RQL dataSource found, attempting to fetch...');
         const { queries } = pageDefinition.dataSource.sourceParams;
-        
+        const queryEntries = Object.entries(queries || {}).filter(([key]) => key.trim().length > 0);
+
+        if (!RQL_ENDPOINT) {
+          logExpectedInitRql('missing-endpoint', {
+            pageId: pageDefinition.id,
+            route: pageDefinition.route,
+          });
+          setMainPageData(null);
+          setIsMainPageDataLoading(false);
+          return;
+        }
+
+        if (queryEntries.length === 0) {
+          logExpectedInitRql('empty-queries', {
+            pageId: pageDefinition.id,
+            route: pageDefinition.route,
+          });
+          setMainPageData(null);
+          setIsMainPageDataLoading(false);
+          return;
+        }
+
         const templatingContext = {
           page: pageInfo,
           user: userInfo,
@@ -165,18 +286,55 @@ const OkiynaiPageWithDataContext: React.FC<OkiynaiPageWithDataContextProps> = ({
           route: pageInfo.routeParams || {},
         };
 
-        const resolvedQueries: Record<string, RQLQuery> = {};
-        for (const key in queries) {
-          const query = queries[key];
+        const hasRouteBoundQueries = queryEntries.some(([, query]) =>
+          hasRouteBindingInValue((query as RQLQuery | undefined)?.params)
+        );
+        if (hasRouteBoundQueries && routeResolution.missingDynamicParams.length > 0) {
+          logExpectedInitRql('missing-route-params', {
+            pageId: pageDefinition.id,
+            route: pageDefinition.route,
+            missingParams: routeResolution.missingDynamicParams,
+          });
+          setMainPageData(null);
+          setIsMainPageDataLoading(false);
+          return;
+        }
 
-          resolvedQueries[key] = {
+        const resolvedQueries: Record<string, RQLQuery> = {};
+        const invalidQueryKeys: string[] = [];
+
+        for (const [queryKey, queryValue] of queryEntries) {
+          const query = queryValue as RQLQuery | undefined;
+          if (
+            !query ||
+            typeof query !== 'object' ||
+            !query.contract ||
+            !query.select ||
+            typeof query.select !== 'object'
+          ) {
+            invalidQueryKeys.push(queryKey);
+            continue;
+          }
+
+          resolvedQueries[queryKey] = {
             ...query,
             params: query.params ? resolveDataBindingsInObject(query.params, templatingContext) : undefined,
           };
         }
 
-
-        console.log('[TESTTEST]', resolvedQueries);
+        if (invalidQueryKeys.length > 0) {
+          const invalidQueriesError = new Error(
+            `Invalid RQL query definitions for keys: ${invalidQueryKeys.join(', ')}`
+          );
+          logActionableRql(invalidQueriesError.message, {
+            pageId: pageDefinition.id,
+            route: pageDefinition.route,
+          });
+          setMainPageDataError(invalidQueriesError);
+          setMainPageData(null);
+          setIsMainPageDataLoading(false);
+          return;
+        }
 
         try {
           const response = await fetch(RQL_ENDPOINT, {
@@ -197,7 +355,7 @@ const OkiynaiPageWithDataContext: React.FC<OkiynaiPageWithDataContextProps> = ({
           console.log('[DataContext] RQL data fetched:', result.data);
           setMainPageData(result.data);
         } catch (error) {
-          console.error('[DataContext] Error fetching RQL data:', error);
+          logActionableRql('Error fetching page-level RQL data.', error);
           setMainPageDataError(error instanceof Error ? error : new Error('Failed to fetch page data'));
           setMainPageData(null);
         } finally {
@@ -213,7 +371,15 @@ const OkiynaiPageWithDataContext: React.FC<OkiynaiPageWithDataContextProps> = ({
     };
 
     fetchData();
-  }, [pageDefinition.id, pageDefinition.dataSource, pageInfo, userInfo, routeParams, refetchIndex]);
+  }, [
+    pageDefinition.id,
+    pageDefinition.dataSource,
+    pageDefinition.route,
+    pageInfo,
+    userInfo,
+    routeResolution,
+    refetchIndex,
+  ]);
 
   // Effect to fetch shop data from subdomain when not in editor mode
   useEffect(() => {

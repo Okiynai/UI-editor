@@ -47,6 +47,9 @@ export async function fetchDataFromSource(source: NodeDataSource): Promise<any> 
   
   switch (source.type) {
     case 'rql': {
+      if (!RQL_ENDPOINT) {
+        return { data: {} };
+      }
       const response = await fetch(RQL_ENDPOINT, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -149,19 +152,20 @@ export async function fetchDataFromSource(source: NodeDataSource): Promise<any> 
       await new Promise(resolve => setTimeout(resolve, 500)); // Simulate network delay
       
       // Return mock data based on the query
-      if (source.query.includes('relatedProducts')) {
+      const queryText = typeof source.query === 'string' ? source.query : JSON.stringify(source.query || '');
+      if (queryText.includes('relatedProducts')) {
         return [
           { id: 'rel-1', name: 'Related Widget A', price: 24.99, categoryId: 'test-category-001' },
           { id: 'rel-2', name: 'Related Widget B', price: 34.99, categoryId: 'test-category-001' },
           { id: 'rel-3', name: 'Related Widget C', price: 19.99, categoryId: 'test-category-001' },
         ];
-      } else if (source.query.includes('userReviews')) {
+      } else if (queryText.includes('userReviews')) {
         return [
           { id: 1, rating: 5, comment: 'Excellent product! Highly recommended.', author: 'John D.', date: '2024-01-15' },
           { id: 2, rating: 4, comment: 'Very satisfied with the quality.', author: 'Jane S.', date: '2024-01-10' },
           { id: 3, rating: 5, comment: 'Perfect for my needs!', author: 'Mike R.', date: '2024-01-08' },
         ];
-      } else if (source.query.includes('reviewSummary')) {
+      } else if (queryText.includes('reviewSummary')) {
         return {
           averageRating: 4.7,
           totalReviews: 23,
@@ -173,7 +177,7 @@ export async function fetchDataFromSource(source: NodeDataSource): Promise<any> 
             1: 0
           }
         };
-      } else if (source.query.includes('productAnalytics')) {
+      } else if (queryText.includes('productAnalytics')) {
         return {
           views: 1547,
           purchases: 89,
@@ -182,7 +186,7 @@ export async function fetchDataFromSource(source: NodeDataSource): Promise<any> 
           lastUpdated: new Date().toISOString()
         };
       } else {
-        return { message: 'Mock data for: ' + source.query, variables: source.variables };
+        return { message: 'Mock data for: ' + queryText, variables: source.variables };
       }
     }
     

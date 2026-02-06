@@ -129,7 +129,10 @@ export function DynamicComponentLoader({ url, resolvedProps, nodeId, fallback, j
           if (!filename) throw new Error(`Invalid compiled component URL format: ${url}`);
           
           const result = await getCompiledComponent({ filename, shopId: shopId || undefined });
-          if (!result.success) throw new Error(result.error || 'Failed to fetch compiled component');
+          if (!result.success) {
+            if (result.error === 'disabled') return;
+            throw new Error(result.error || 'Failed to fetch compiled component');
+          }
           
           scriptText = result.data!;
           if (isMounted) {
@@ -154,7 +157,10 @@ export function DynamicComponentLoader({ url, resolvedProps, nodeId, fallback, j
           if (!filename) throw new Error(`Invalid compiled component URL format: ${url}`);
 
           const result = await getCompiledComponent({ filename, shopId: shopId || undefined });
-          if (!result.success) throw new Error(result.error || 'Failed to fetch compiled component');
+          if (!result.success) {
+            if (result.error === 'disabled') return;
+            throw new Error(result.error || 'Failed to fetch compiled component');
+          }
 
           scriptText = result.data!;
         }

@@ -6,7 +6,10 @@ export interface PageInfo {
   name?: string; // From PageDefinition.name
   route?: string; // From PageDefinition.route
   routeParams?: Record<string, string>; // From URL
-  // Could also include slug, query params later
+  // Convenience aliases for dynamic route usage in templates
+  slug?: string; // First dynamic route value when present
+  slugName?: string; // First dynamic route param name when present
+  slugs?: Record<string, string>; // Alias to routeParams for readability
 }
 
 export interface NodeDataRequirementState {

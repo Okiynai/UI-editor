@@ -510,12 +510,11 @@ export default function UserSettingsComponent({ id, style, className }: UserSett
           </div>
 
           {isMobileMenuOpen && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 z-[9998] md:hidden" onClick={() => setIsMobileMenuOpen(false)} />
+            <div className="fixed inset-0 bg-black/50 z-[9998] md:hidden" onClick={() => setIsMobileMenuOpen(false)} />
           )}
         </div>
       </div>
     </div>
   );
 }
-
 

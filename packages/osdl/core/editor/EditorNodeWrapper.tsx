@@ -7,6 +7,7 @@ import {
   hoveredNodeIdAtom,
   interactionModeAtom,
   currentPageIdAtom,
+  currentPageNameAtom,
   SelectedNode,
   textEditStateAtom,
 } from '@/store/editor';
@@ -14,8 +15,8 @@ import { Node, PageDefinition, LayoutConfig } from '@/OSDL.types';
 import NodeRenderer, { NodeRendererProps } from '@/osdl/NodeRenderer';
 import { Edit, CopyPlus, Trash2, ArrowUp, ArrowDown, Plus } from 'lucide-react';
 import { createPortal } from 'react-dom';
-import { useRef, useState, useEffect } from 'react';
-import ComponentRegistry from '@/ComponentRegistry';
+import { useRef, useState, useEffect, useMemo } from 'react';
+import { prebuiltSections } from '@/prebuilt-sections';
 
 interface EditorNodeWrapperProps {
   nodeSchema: Node;
@@ -83,7 +84,52 @@ function findParentSection(nodes: Node[], targetId: string): Node | null {
   return null;
 }
 
+const isOutOfFlowNode = (node: Node): boolean => {
+  const position = (node as any)?.positioning?.position;
+  return position === 'absolute' || position === 'fixed';
+};
+
+const getOrderedInFlowSiblingPosition = (
+  nodes: Node[] | undefined,
+  targetId: string
+): { sortedSiblings: Node[]; index: number } => {
+  if (!nodes || nodes.length === 0) {
+    return { sortedSiblings: [], index: -1 };
+  }
+
+  const findSiblingGroup = (currentNodes: Node[]): Node[] | null => {
+    for (const currentNode of currentNodes) {
+      if (currentNode.id === targetId) {
+        return currentNodes;
+      }
+      if ('children' in currentNode && Array.isArray(currentNode.children) && currentNode.children.length > 0) {
+        const found = findSiblingGroup(currentNode.children as Node[]);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  const siblingGroup = findSiblingGroup(nodes) || [];
+  const sortedSiblings = siblingGroup
+    .filter((node) => !isOutOfFlowNode(node))
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+  return {
+    sortedSiblings,
+    index: sortedSiblings.findIndex((node) => node.id === targetId),
+  };
+};
+
 let timeoutId: NodeJS.Timeout | null = null;
+
+const formatLabel = (value: string) => {
+  return value
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+};
 
 
 export const EditorNodeWrapper: React.FC<EditorNodeWrapperProps> = ({ nodeSchema, setPageDefinition, ChildRenderer, 
@@ -565,54 +611,16 @@ const FloatingToolbar: React.FC<{
   // Determine if the node can be moved up or down
   const canMoveUp = (() => {
     if (!pageDefinition?.nodes || !onMoveNode) return false;
-    
-    // Find the current node and its parent
-    const findNodeAndParent = (nodes: Node[], targetId: string, parent: Node | null = null): { node: Node | null, parent: Node | null, siblings: Node[], index: number } => {
-      for (let i = 0; i < nodes.length; i++) {
-        const node = nodes[i];
-        if (node.id === targetId) {
-          return { node, parent, siblings: nodes, index: i };
-        }
-        if ('children' in node && node.children) {
-          const result = findNodeAndParent(node.children as Node[], targetId, node);
-          if (result.node) {
-            return result;
-          }
-        }
-      }
-      return { node: null, parent: null, siblings: [], index: -1 };
-    };
-    
-    const { siblings, index } = findNodeAndParent(pageDefinition.nodes, nodeSchema.id);
-    
-    // Can move up if not the first node in its sibling array
+
+    const { index } = getOrderedInFlowSiblingPosition(pageDefinition.nodes, nodeSchema.id);
     return index > 0;
   })();
 
   const canMoveDown = (() => {
     if (!pageDefinition?.nodes || !onMoveNode) return false;
-    
-    // Find the current node and its parent
-    const findNodeAndParent = (nodes: Node[], targetId: string, parent: Node | null = null): { node: Node | null, parent: Node | null, siblings: Node[], index: number } => {
-      for (let i = 0; i < nodes.length; i++) {
-        const node = nodes[i];
-        if (node.id === targetId) {
-          return { node, parent, siblings: nodes, index: i };
-        }
-        if ('children' in node && node.children) {
-          const result = findNodeAndParent(node.children as Node[], targetId, node);
-          if (result.node) {
-            return result;
-          }
-        }
-      }
-      return { node: null, parent: null, siblings: [], index: -1 };
-    };
-    
-    const { siblings, index } = findNodeAndParent(pageDefinition.nodes, nodeSchema.id);
-    
-    // Can move down if not the last node in its sibling array
-    return index >= 0 && index < siblings.length - 1;
+
+    const { sortedSiblings, index } = getOrderedInFlowSiblingPosition(pageDefinition.nodes, nodeSchema.id);
+    return index >= 0 && index < sortedSiblings.length - 1;
   })();
 
   const handleActionClick = (e: React.MouseEvent, action: string) => {
@@ -869,6 +877,7 @@ const NodeOverlay: React.FC<{
 
   const [showPlusModal, setShowPlusModal] = useState<{ position: 'top' | 'bottom' | 'left' | 'right'; buttonRect: DOMRect } | null>(null);
   const [hoveredSection, setHoveredSection] = useState<string | null>(null);
+  const [insertPlacement, setInsertPlacement] = useState<'inside' | 'before' | 'after'>('after');
 
   const handlePlusClick = (position: 'top' | 'bottom' | 'left' | 'right') => {
     console.log(`Plus button clicked at ${position} for node ${nodeSchema.id}`);
@@ -920,6 +929,65 @@ const NodeOverlay: React.FC<{
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [showPlusModal]);
+
+  useEffect(() => {
+    if (!showPlusModal) return;
+    const { position } = showPlusModal;
+    const placement = position === 'top' || position === 'left' ? 'before' : 'after';
+    setInsertPlacement(placement);
+  }, [showPlusModal]);
+
+  const sectionItems = useMemo(() => {
+    const allowedPrebuilt = new Set([
+      'text-block',
+      'link',
+      'image-block',
+      'columns-2',
+      'grid-3',
+      'button-group'
+    ]);
+    const prebuilt = Object.entries(prebuiltSections).map(([key, section]: any) => {
+      const meta = section?.metadata || {};
+      const id = meta.id || key;
+      return {
+        id,
+        name: formatLabel(id),
+        kind: 'prebuilt' as const,
+        sectionType: meta.sectionType || 'section',
+        schema: section?.schema
+      };
+    }).filter((item) => allowedPrebuilt.has(item.id));
+    return prebuilt;
+  }, []);
+
+  const activeSection = sectionItems.find(s => `${s.kind}:${s.id}` === hoveredSection) || null;
+
+  const renderPreview = (section: { id: string; name: string; kind: 'prebuilt'; schema?: any }) => {
+    if (!section.schema) {
+      return (
+        <div style={{ color: '#94a3b8', fontSize: 12 }}>
+          Preview unavailable.
+        </div>
+      );
+    }
+
+    const previewNode: Node = {
+      id: `preview-${section.id}`,
+      name: section.name,
+      order: 0,
+      ...(section.schema as any)
+    };
+
+    return (
+      <div style={{ pointerEvents: 'none' }}>
+        <NodeRenderer
+          nodeSchema={previewNode}
+          showDevInfo={false}
+          isInspectMode={false}
+        />
+      </div>
+    );
+  };
 
 
   return (
@@ -1113,6 +1181,8 @@ const NodeOverlay: React.FC<{
             zIndex: 1000000,
             pointerEvents: 'auto',
             display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
             ...(() => {
               const { position } = showPlusModal;
               const modalWidth = 600;
@@ -1172,201 +1242,220 @@ const NodeOverlay: React.FC<{
               return { 
                 top, 
                 left,
-                maxHeight: availableHeight
+                maxHeight: availableHeight,
+                height: availableHeight
               };
             })(),
           }}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Section List */}
-          <div style={{ width: '180px', overflow: 'auto', height: '100%' }}>
-            {(() => {
-              const prebuilt = [
-                { id: 'navbar', name: 'Navigation Bar', previewImage: `/pre-built-sections/default_navbar.png`, kind: 'prebuilt' as const },
-                { id: 'heroSection', name: 'Hero Section', previewImage: `/pre-built-sections/default_hero.png`, kind: 'prebuilt' as const },
-              ];
-              const components = Object.keys(ComponentRegistry).map(k => ({ id: k, name: k, previewImage: `/pre-built-sections/default_hero.png`, kind: 'component' as const }));
-              const items = [...prebuilt, ...components];
-              return items.map((section) => (
-                <div
-                  key={`${section.kind}:${section.id}`}
-                  style={{
-                    padding: '12px',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    borderBottom: '1px solid #f3f4f6',
-                    backgroundColor: hoveredSection === `${section.kind}:${section.id}` ? '#f8fafc' : 'transparent',
-                  }}
-                  onMouseEnter={() => setHoveredSection(`${section.kind}:${section.id}`)}
-                  onMouseLeave={() => setHoveredSection(null)}
-                  onClick={() => {
-                    console.log('[EditorNodeWrapper] Item clicked:', section);
-                    
-                    // Calculate order based on button position using sibling-aware gaps
-                    const computeSiblingAwareOrder = (position: 'left' | 'right' | 'top' | 'bottom'): number => {
-                      const currentOrder = (nodeSchema as any).order as number;
-                      const findParentNode = (nodes: Node[], targetId: string): any => {
-                        for (const n of nodes) {
-                          if (n.id === targetId) return n;
-                          // @ts-ignore
-                          if ((n as any).children && Array.isArray((n as any).children)) {
+          <>
+            <div style={{ padding: '10px 12px', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+              <span style={{ fontSize: 12, color: '#64748b' }}>Insert</span>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {[
+                  { id: 'inside', label: 'Inside', disabled: nodeSchema.type !== 'section' },
+                  { id: 'before', label: 'Before', disabled: false },
+                  { id: 'after', label: 'After', disabled: false },
+                ].map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    disabled={opt.disabled}
+                    onClick={() => !opt.disabled && setInsertPlacement(opt.id as 'inside' | 'before' | 'after')}
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: 12,
+                      borderRadius: 999,
+                      border: '1px solid',
+                      borderColor: insertPlacement === opt.id ? '#2563eb' : '#e5e7eb',
+                      background: insertPlacement === opt.id ? '#eff6ff' : '#ffffff',
+                      color: opt.disabled ? '#cbd5f5' : (insertPlacement === opt.id ? '#1d4ed8' : '#475569'),
+                      cursor: opt.disabled ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Section List */}
+            <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+              <div style={{ width: '220px', maxHeight: '100%', overflowY: 'auto', borderRight: '1px solid #e5e7eb', minHeight: 0 }}>
+                {sectionItems.map((section) => (
+                  <div
+                    key={`${section.kind}:${section.id}`}
+                    style={{
+                      padding: '12px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      borderBottom: '1px solid #f3f4f6',
+                      backgroundColor: hoveredSection === `${section.kind}:${section.id}` ? '#f8fafc' : 'transparent',
+                    }}
+                    onMouseEnter={() => setHoveredSection(`${section.kind}:${section.id}`)}
+                    onMouseLeave={() => setHoveredSection(null)}
+                    onClick={() => {
+                      console.log('[EditorNodeWrapper] Item clicked:', section);
+                      
+                      // Calculate order based on button position using sibling-aware gaps
+                      const computeSiblingAwareOrder = (position: 'left' | 'right' | 'top' | 'bottom'): number => {
+                        const currentOrder = (nodeSchema as any).order as number;
+                        const findParentNode = (nodes: Node[], targetId: string): any => {
+                          for (const n of nodes) {
+                            if (n.id === targetId) return n;
                             // @ts-ignore
-                            const found = findParentNode((n as any).children, targetId);
-                            if (found) return found;
+                            if ((n as any).children && Array.isArray((n as any).children)) {
+                              // @ts-ignore
+                              const found = findParentNode((n as any).children, targetId);
+                              if (found) return found;
+                            }
                           }
-                        }
-                        return null;
-                      };
+                          return null;
+                        };
 
-                      let siblings: any[] = [];
-                      if (pageDefinition) {
-                        const parentId = (() => {
-                          const findParent = (nodes: Node[], targetId: string): string | null => {
-                            for (const node of nodes) {
-                              if (node.type === 'section' && 'children' in node && node.children) {
-                                if (node.children.some(child => child.id === targetId)) {
-                                  return node.id;
+                        let siblings: any[] = [];
+                        if (pageDefinition) {
+                          const parentId = (() => {
+                            const findParent = (nodes: Node[], targetId: string): string | null => {
+                              for (const node of nodes) {
+                                if (node.type === 'section' && 'children' in node && node.children) {
+                                  if (node.children.some(child => child.id === targetId)) {
+                                    return node.id;
+                                  }
+                                  const found = findParent(node.children as Node[], targetId);
+                                  if (found) return found;
                                 }
-                                const found = findParent(node.children as Node[], targetId);
-                                if (found) return found;
                               }
-                            }
-                            return null;
-                          };
-                          const parent = findParent(pageDefinition.nodes, nodeSchema.id);
-                          return parent || 'root';
-                        })();
+                              return null;
+                            };
+                            const parent = findParent(pageDefinition.nodes, nodeSchema.id);
+                            return parent || 'root';
+                          })();
 
-                        if (parentId === 'root') {
-                          siblings = pageDefinition.nodes.slice();
-                        } else {
-                          const parentNode = findParentNode(pageDefinition.nodes, parentId);
-                          siblings = (parentNode?.children || []).slice();
-                        }
-                      }
-
-                      siblings.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-                      const idx = siblings.findIndex(s => s.id === (nodeSchema as any).id);
-
-                      if (position === 'left' || position === 'top') {
-                        if (idx > 0) {
-                          const prev = siblings[idx - 1];
-                          return (Number(prev.order) + Number(currentOrder)) / 2;
-                        }
-                        return Number(currentOrder) - 1;
-                      } else {
-                        if (idx >= 0 && idx < siblings.length - 1) {
-                          const next = siblings[idx + 1];
-                          return (Number(next.order) + Number(currentOrder)) / 2;
-                        }
-                        return Number(currentOrder) + 1;
-                      }
-                    };
-
-                    let order = 0;
-                    if (showPlusModal) {
-                      const { position } = showPlusModal;
-                      order = computeSiblingAwareOrder(position);
-                    }
-
-                    const parentId = (() => {
-                      if (!pageDefinition) return 'root';
-                      const findParent = (nodes: Node[], targetId: string): string | null => {
-                        for (const node of nodes) {
-                          if (node.type === 'section' && 'children' in node && node.children) {
-                            if (node.children.some(child => child.id === targetId)) {
-                              return node.id;
-                            }
-                            const found = findParent(node.children as Node[], targetId);
-                            if (found) return found;
+                          if (parentId === 'root') {
+                            siblings = pageDefinition.nodes.slice();
+                          } else {
+                            const parentNode = findParentNode(pageDefinition.nodes, parentId);
+                            siblings = (parentNode?.children || []).slice();
                           }
                         }
-                        return null;
-                      };
-                      const parent = findParent(pageDefinition.nodes, nodeSchema.id);
-                      return parent || 'root';
-                    })();
 
-                    if (section.kind === 'component') {
-                      const componentNode = {
-                        id: `component-${crypto.randomUUID().slice(0,8)}`,
-                        type: 'component',
-                        componentType: section.id,
-                        name: section.name,
-                        order,
-                        params: {}
-                      } as any;
+                        siblings.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+                        const idx = siblings.findIndex(s => s.id === (nodeSchema as any).id);
+
+                        if (position === 'left' || position === 'top') {
+                          if (idx > 0) {
+                            const prev = siblings[idx - 1];
+                            return (Number(prev.order) + Number(currentOrder)) / 2;
+                          }
+                          return Number(currentOrder) - 1;
+                        } else {
+                          if (idx >= 0 && idx < siblings.length - 1) {
+                            const next = siblings[idx + 1];
+                            return (Number(next.order) + Number(currentOrder)) / 2;
+                          }
+                          return Number(currentOrder) + 1;
+                        }
+                      };
+
+                      const findParentId = (): string => {
+                        if (!pageDefinition) return 'root';
+                        const findParent = (nodes: Node[], targetId: string): string | null => {
+                          for (const node of nodes) {
+                            if (node.type === 'section' && 'children' in node && node.children) {
+                              if (node.children.some(child => child.id === targetId)) {
+                                return node.id;
+                              }
+                              const found = findParent(node.children as Node[], targetId);
+                              if (found) return found;
+                            }
+                          }
+                          return null;
+                        };
+                        const parent = findParent(pageDefinition.nodes, nodeSchema.id);
+                        return parent || 'root';
+                      };
+
+                      const computeOrderForInside = (): number => {
+                        if (!pageDefinition) return 0;
+                        const findNode = (nodes: Node[], targetId: string): any => {
+                          for (const node of nodes) {
+                            if (node.id === targetId) return node;
+                            if ('children' in node && node.children) {
+                              const found = findNode(node.children as Node[], targetId);
+                              if (found) return found;
+                            }
+                          }
+                          return null;
+                        };
+                        const target = findNode(pageDefinition.nodes, nodeSchema.id);
+                        const children = (target?.children || []) as any[];
+                        if (children.length === 0) return 0;
+                        const maxOrder = Math.max(...children.map((c) => Number(c.order ?? 0)));
+                        return maxOrder + 1;
+                      };
+
+                      let order = 0;
+                      let parentId = 'root';
+                      if (insertPlacement === 'inside' && nodeSchema.type === 'section') {
+                        parentId = nodeSchema.id;
+                        order = computeOrderForInside();
+                      } else {
+                        parentId = findParentId();
+                        if (showPlusModal) {
+                          const { position } = showPlusModal;
+                          order = computeSiblingAwareOrder(position);
+                        }
+                      }
 
                       const message = {
-                        type: 'CREATE_OSDL_NODE',
-                        payload: { node: componentNode, parentId }
+                        type: 'ADD_PRE_BUILT_SECTION',
+                        payload: { sectionId: section.id, parentId, name: section.name, order }
                       };
                       window.postMessage(message, '*');
                       handleClosePlusModal();
-                      return;
-                    }
-
-                    const message = {
-                      type: 'ADD_PRE_BUILT_SECTION',
-                      payload: { sectionId: section.id, parentId, name: section.name, order }
-                    };
-                    window.postMessage(message, '*');
-                    handleClosePlusModal();
-                  }}
-                >
-                  <h4 style={{ 
-                    margin: 0, 
-                    fontSize: '14px', 
-                    fontWeight: '500', 
-                    color: hoveredSection === `${section.kind}:${section.id}` ? '#1e40af' : '#374151',
-                    transition: 'color 0.2s ease'
-                  }}>
-                    {section.name}
-                  </h4>
+                    }}
+                  >
+                    <h4 style={{ 
+                      margin: 0, 
+                      fontSize: '14px', 
+                      fontWeight: '500', 
+                      color: hoveredSection === `${section.kind}:${section.id}` ? '#1e40af' : '#374151',
+                      transition: 'color 0.2s ease'
+                    }}>
+                      {section.name}
+                    </h4>
+                  </div>
+                ))}
+              </div>
+              
+              {/* Live Preview */}
+              <div style={{ 
+                flex: 1, 
+                backgroundColor: '#f8fafc',
+                borderTopRightRadius: '12px',
+                borderBottomRightRadius: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'hidden',
+                minHeight: 0
+              }}>
+                <div style={{ padding: 16, overflow: 'auto', maxHeight: '100%', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {activeSection ? (
+                    <div style={{ background: 'white', borderRadius: 12, padding: 16, border: '1px solid #e5e7eb', boxShadow: '0 10px 20px -12px rgba(15, 23, 42, 0.2)', width: '100%', maxWidth: 540 }}>
+                      {renderPreview(activeSection)}
+                    </div>
+                  ) : (
+                    <div style={{ color: '#94a3b8', fontSize: 12 }}>
+                      Select a section to preview
+                    </div>
+                  )}
                 </div>
-              ));
-            })()}
-          </div>
-          
-          {/* Image Preview */}
-          <div style={{ 
-            flex: 1, 
-            backgroundColor: '#f8fafc',
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'center',
-            borderTopRightRadius: '12px',
-            borderBottomRightRadius: '12px',
-            borderLeft: '1px solid #e5e7eb'
-          }}>
-            {hoveredSection && (
-              <img
-                src={(() => {
-                  const prebuilt = [
-                    { id: 'navbar', name: 'Navigation Bar', previewImage: `/pre-built-sections/default_navbar.png`, kind: 'prebuilt' as const },
-                    { id: 'heroSection', name: 'Hero Section', previewImage: `/pre-built-sections/default_hero.png`, kind: 'prebuilt' as const },
-                  ];
-                  const components = Object.keys(ComponentRegistry).map(k => ({ id: k, name: k, previewImage: `/pre-built-sections/default_hero.png`, kind: 'component' as const }));
-                  const items = [...prebuilt, ...components];
-                  const section = items.find(s => `${s.kind}:${s.id}` === hoveredSection);
-                  return section?.previewImage || `/pre-built-sections/default_hero.png`;
-                })()}
-                alt="Preview"
-                style={{
-                  maxWidth: '95%',
-                  maxHeight: '95%',
-                  objectFit: 'contain',
-                  borderRadius: '4px'
-                }}
-                onLoad={() => console.log('[EditorNodeWrapper] Preview image loaded successfully')}
-                onError={(e) => {
-                  console.error('[EditorNodeWrapper] Preview image failed to load');
-                  // Fallback to a placeholder
-                  e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgdmlld0JveD0iMCAwIDQwMCAzMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSI0MDAiIGhlaWdodD0iMzAwIiBmaWxsPSIjRjNGNEY2Ii8+Cjx0ZXh0IHg9IjIwMCIgeT0iMTUwIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTgiIGZpbGw9IiM5Q0ExQUEiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5QcmV2aWV3PC90ZXh0Pgo8L3N2Zz4K';
-                }}
-              />
-            )}
-          </div>
+              </div>
+            </div>
+          </>
         </div>,
         document.body
       )}

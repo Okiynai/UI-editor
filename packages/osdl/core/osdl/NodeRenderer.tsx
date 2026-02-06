@@ -502,6 +502,12 @@ const NodeRenderer: React.FC<NodeRendererProps> = ({
 
         // 1. Create standard event handlers (onClick, onFocus, etc.)
         const createHandler = (eventType: keyof typeof eventHandlers) => (e: React.SyntheticEvent) => {
+          if (isInspectMode) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
+
           if (eventHandlers[eventType]) {
             e.stopPropagation(); // Prevent event from bubbling up and triggering parent handlers
             executeActions(eventHandlers[eventType], atomSchema.id, finalTemplatingContext);
@@ -521,6 +527,12 @@ const NodeRenderer: React.FC<NodeRendererProps> = ({
           const isCheckable = inputType === 'checkbox' || inputType === 'radio';
 
           propsForAtom.onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+            if (isInspectMode) {
+              e.preventDefault();
+              e.stopPropagation();
+              return;
+            }
+
             const target = e.target;
             const newValue = target.type === 'checkbox' ? target.checked : target.value;
             
@@ -582,6 +594,12 @@ const NodeRenderer: React.FC<NodeRendererProps> = ({
       // This is defined here so it can be used by both repeater and non-repeater sections.
       const sectionOnClickHandler = sectionSchema.eventHandlers?.onClick 
         ? (e: React.MouseEvent) => {
+            if (isInspectMode) {
+              e.preventDefault();
+              e.stopPropagation();
+              return;
+            }
+
             e.stopPropagation();
             executeActions(sectionSchema.eventHandlers!.onClick, sectionSchema.id, finalTemplatingContext);
           }
@@ -723,6 +741,10 @@ const NodeRenderer: React.FC<NodeRendererProps> = ({
             onClick={sectionOnClickHandler} 
             onSubmit={sectionSchema.isFormContext && sectionSchema.eventHandlers?.onSubmit ? (e) => {
               e.preventDefault();
+              if (isInspectMode) {
+                e.stopPropagation();
+                return;
+              }
               executeActions(sectionSchema.eventHandlers?.onSubmit, sectionSchema.id, finalTemplatingContext);
             } : undefined}
             data-oskiynai-scope={sectionSchema.id}
@@ -824,6 +846,10 @@ const NodeRenderer: React.FC<NodeRendererProps> = ({
             onClick={sectionOnClickHandler} 
             onSubmit={sectionSchema.isFormContext && sectionSchema.eventHandlers?.onSubmit ? (e) => {
               e.preventDefault();
+              if (isInspectMode) {
+                e.stopPropagation();
+                return;
+              }
               executeActions(sectionSchema.eventHandlers?.onSubmit, sectionSchema.id, finalTemplatingContext);
             } : undefined}
             data-oskiynai-scope={sectionSchema.id}

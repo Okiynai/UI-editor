@@ -40,7 +40,10 @@ export const BreakpointProvider = ({ children }: { children: ReactNode }) => {
       let currentBreakpoint: ResponsiveBreakpointName | null = null;
       
       const sortedBreakpoints = Object.entries(breakpoints)
-        .map(([name, query]) => ({ name: name as ResponsiveBreakpointName, query, isMinWidth: query.includes('min-width') }))
+        .map(([name, query]) => {
+          const queryText = typeof query === 'string' ? query : String(query);
+          return { name: name as ResponsiveBreakpointName, query: queryText, isMinWidth: queryText.includes('min-width') };
+        })
         // A sort to prioritize larger breakpoints (min-width) to handle overlapping queries correctly.
         // This is a common strategy: check from largest requirement to smallest.
         .sort((a, b) => {
@@ -60,7 +63,10 @@ export const BreakpointProvider = ({ children }: { children: ReactNode }) => {
 
       // Fallback for the smallest breakpoint (often mobile) if it uses max-width and nothing else matched.
       if (!matched) {
-          const mobileBreakpoint = Object.entries(breakpoints).find(([name, query]) => name === 'mobile' && query.includes('max-width'));
+          const mobileBreakpoint = Object.entries(breakpoints).find(([name, query]) => {
+            const queryText = typeof query === 'string' ? query : String(query);
+            return name === 'mobile' && queryText.includes('max-width');
+          });
           if (mobileBreakpoint && window.matchMedia(`(${mobileBreakpoint[1]})`).matches) {
               currentBreakpoint = 'mobile';
           }
