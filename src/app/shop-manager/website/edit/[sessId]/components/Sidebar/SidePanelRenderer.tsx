@@ -13,7 +13,6 @@ const LoadingFallback = ({ componentName }: { componentName: string }) => (
 );
 
 // Lazy load components
-const ChatPanel = lazy(() => import("./ChatPanel/ChatPanel").then(module => ({ default: module.ChatPanel })));
 const SettingsPanel = lazy(() => import("./SettingsPanel/SettingsPanel").then(module => ({ default: module.SettingsPanel })));
 const AssetsPanel = lazy(() => import("./AssetsPanel/AssetsPanel").then(module => ({ default: module.AssetsPanel })));
 const LayoutPanel = lazy(() => import("./LayoutPanel/LayoutPanel").then(module => ({ default: module.LayoutPanel })));
@@ -198,16 +197,6 @@ export const SidePanelRenderer = ({
             ref={secondarySidebarRef}
         >
             {/* Main panel content */}
-            {loadedPanels.has("chat") && (
-                <div className={`${activePanel === "chat" ? 'block' : 'hidden'}`}>
-                    <Suspense fallback={<LoadingFallback componentName="Chat Panel" />}>
-                        <ChatPanel
-                            pageDefinition={pageDefinition}
-                        />
-                    </Suspense>
-                </div>
-            )}
-
             {loadedPanels.has("settings") && (
                 <div className={`${activePanel === "settings" ? 'block' : 'hidden'}`}>
                     <Suspense fallback={<LoadingFallback componentName="Settings Panel" />}>

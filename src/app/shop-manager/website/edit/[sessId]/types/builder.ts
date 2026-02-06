@@ -1,4 +1,4 @@
-export type SidebarPanel = "chat" | "settings" | "assets" | "layout";
+export type SidebarPanel = "settings" | "assets" | "layout";
 export type ScreenSize = "desktop" | "tablet" | "mobile" | "resizable";
 
 export type Page = {

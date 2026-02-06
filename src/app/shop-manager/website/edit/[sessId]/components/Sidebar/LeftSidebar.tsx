@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { Settings, FolderOpen, MessageCircle, Layout, FileText, Code, ChevronRight } from 'lucide-react';
+import { Settings, FolderOpen, Layout, Code, ChevronRight } from 'lucide-react';
 import { SidebarPanel } from '../../types/builder';
 import { useAtom } from 'jotai';
 import { isInPreviewModeAtom } from '../../store';
-import { chatDebugModeAtom, layoutDebugModeAtom } from '@/store/editor';
+import { layoutDebugModeAtom } from '@/store/editor';
 
 export const LeftSidebar = ({
     activePanel,
@@ -55,17 +55,6 @@ export const LeftSidebar = ({
                         <Layout size={16} />
                     </button>
                     
-                    <button
-                        onClick={() => onPanelChange("chat")}
-                        className={`w-10 h-10 rounded-lg flex items-center justify-center transition-colors ${
-                            activePanel === "chat" 
-                            ? "bg-primary-100 text-primary-600" 
-                            : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-                        }`}
-                        title="Chat"
-                    >
-                        <MessageCircle size={16} />
-                    </button>
                 </div>
 
                 {/* Debug Controls Section */}
@@ -78,7 +67,6 @@ export const LeftSidebar = ({
 // Debug Controls Component
 const DebugControls = () => {
     const [isOpen, setIsOpen] = useState(false);
-    const [chatDebugMode, setChatDebugMode] = useAtom(chatDebugModeAtom);
     const [layoutDebugMode, setLayoutDebugMode] = useAtom(layoutDebugModeAtom);
 
     return (
@@ -108,18 +96,6 @@ const DebugControls = () => {
                         <Code size={16} />
                     </button>
 
-                    {/* Chat Raw Mode Toggle */}
-                    <button
-                        onClick={() => setChatDebugMode(prev => prev === 'off' ? 'raw' : 'off')}
-                        className={`w-10 h-10 rounded-lg flex items-center justify-center transition-colors ${
-                            chatDebugMode === 'raw'
-                                ? 'bg-purple-600 text-purple-100 border border-purple-400'
-                                : 'text-gray-300 hover:text-gray-100 hover:bg-gray-700 border border-transparent'
-                        }`}
-                        title={chatDebugMode === 'raw' ? "Switch to Normal Chat Mode" : "Enable Raw Chat Mode"}
-                    >
-                        <FileText size={16} />
-                    </button>
                 </div>
                 
                 {/* Toggle button */}

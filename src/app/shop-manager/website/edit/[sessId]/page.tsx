@@ -16,7 +16,7 @@ import {
     deletePage,
     deleteSiteVariable,
 } from '@/services/api/shop-manager/osdl';
-import { toast } from "react-toastify";
+import { toast } from "@/components/toast/toast";
 import { 
     SidebarPanel, 
     ScreenSize,
@@ -41,7 +41,7 @@ import { currentPageIdAtom } from '@/store/editor';
 
 function BuilderPageContent() {
     const params = useParams();
-    const siteId = (params?.sessId as string) || '';
+    const siteId = (params?.sessId as string) || 'demo';
     const { shop, isLoading: isAuthLoading } = useSession();
     const [currentPageId, setCurrentPageId] = useAtom(currentPageIdAtom);
 
@@ -49,6 +49,7 @@ function BuilderPageContent() {
     
     // Use iframe communication context
     const { handleChangePage, isReady, iframeCommunicationManager } = useIframeCommunicationContext();
+    const hasInitializedIframePageRef = useRef(false);
 
     // NEW: Iframe data states (single source of truth from iframe)
     const [iframeSiteSettings, setIframeSiteSettings] = useState<any>(null);
@@ -116,14 +117,14 @@ function BuilderPageContent() {
     } : null;
     const isLoadingLocales = iframeSiteSettingsState.isLoading;
 
-    // Panel states - initialize with localStorage value or default to "chat"
+    // Panel states - initialize with localStorage value or default to "settings"
     const [activePanel, setActivePanel] = useState<SidebarPanel>(() => {
         if (typeof window !== 'undefined') {
             const saved = localStorage.getItem('builderSidebarLayout');
             if (saved) {
                 try {
                     const parsed = JSON.parse(saved);
-                    if (parsed.activePanel && ['chat', 'settings', 'assets', 'layout'].includes(parsed.activePanel)) {
+                    if (parsed.activePanel && ['settings', 'assets', 'layout'].includes(parsed.activePanel)) {
                         return parsed.activePanel as SidebarPanel;
                     }
                 } catch (error) {
@@ -131,7 +132,7 @@ function BuilderPageContent() {
                 }
             }
         }
-        return "chat"; // fallback default
+        return "settings"; // fallback default
     });
     const [screenSize, setScreenSize] = useState<ScreenSize>("desktop");
     
@@ -187,26 +188,43 @@ function BuilderPageContent() {
     const handlePageChange = useCallback((pageValue: string) => {
         const page = userPagesData?.find(p => p.value === pageValue);
         if (page) {
+            // Ignore redundant same-page requests to avoid accidental iframe re-initialization.
+            if (page.value === selectedPage && page.realId === currentPageId) {
+                return;
+            }
             setSelectedPage(page.value);
             setCurrentPageId(page.realId);
             handleChangePage(page.value, shop?.subdomain || '');
 
             console.log(`[BuilderPage] Page changed to: ${page.label} (ID: ${page.id})`);
         }
-    }, [userPagesData, setCurrentPageId]);
+    }, [userPagesData, setCurrentPageId, handleChangePage, shop?.subdomain, selectedPage, currentPageId]);
+
+    useEffect(() => {
+        hasInitializedIframePageRef.current = false;
+    }, [siteId]);
 
     // Handle page changes - pass the route to iframe (including initial load)
     useEffect(() => {
-        // only if the iframe is ready and the currentPageId is ''
-        // so we make sure that we do this only once on init.
-        if (isReady && currentPageId === '' && shop) {
-            const page = userPagesData?.find(p=> p.id == 'index');
-            if(!page || !shop?.subdomain) return;
-
-            handleChangePage(page.value, shop.subdomain);
-            setCurrentPageId(page.realId);
+        // Initialize iframe page exactly once per builder session after explicit READY.
+        if (hasInitializedIframePageRef.current || !isReady || !shop || !userPagesData?.length) {
+            return;
         }
-    }, [userPagesData, isReady, shop]);
+
+        const indexPage = userPagesData.find((p) => p.id === 'index');
+        const selectedPageEntry = userPagesData.find((p) => p.value === selectedPage);
+        const targetPage = indexPage || selectedPageEntry || userPagesData[0];
+
+        if (!targetPage) {
+            return;
+        }
+
+        hasInitializedIframePageRef.current = true;
+
+        setSelectedPage((prev) => (prev === targetPage.value ? prev : targetPage.value));
+        setCurrentPageId((prev) => (prev === targetPage.realId ? prev : targetPage.realId));
+        handleChangePage(targetPage.value, shop.subdomain || '');
+    }, [userPagesData, isReady, shop, selectedPage, handleChangePage, setCurrentPageId]);
 
     const { mutate: upsertPageMutation, isPending: isUpsertingPage } = useMutation({
         mutationFn: (pageData: Parameters<typeof upsertPage>[1]) => upsertPage(shopId, pageData),

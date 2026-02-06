@@ -50,8 +50,11 @@ export const ChatPanel = ({ pageDefinition }:
     const ensureChatFolderId = useCallback(async (): Promise<string | null> => {
         if (chatFolderId) return chatFolderId;
         const foldersResp = await getAssetFolders();
-        const chatFolder = foldersResp?.data?.find((f: any) => f.name === 'chat');
-        const folderId = chatFolder?.id || null;
+        const chatFolder = foldersResp?.data?.find((f: any) => {
+            const name = (f?.name || '').toLowerCase();
+            return name === 'chat' || name === 'assets' || name === 'images';
+        });
+        const folderId = chatFolder?.id || foldersResp?.data?.[0]?.id || null;
         setChatFolderId(folderId);
         return folderId;
     }, [chatFolderId]);
@@ -269,15 +272,6 @@ export const ChatPanel = ({ pageDefinition }:
                 pendingChanges={pendingChanges}
                 setPendingChanges={setPendingChanges as any}
             /> */}
-
-            {/* Chat Header */}
-            <div className="h-auto flex flex-col px-4 pt-6 justify-center">
-                <div className="flex flex-col items-center w-full mb-4">
-                    <div className="bg-gray-100 rounded-md px-4 py-2 text-sm font-medium text-gray-700 tracking-tight">
-                        Chat
-                    </div>
-                </div>
-            </div>
 
             {/* Chat Content */}
             <div className="flex-1 flex flex-col overflow-hidden">

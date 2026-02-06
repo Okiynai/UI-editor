@@ -76,6 +76,13 @@ export const PreviewArea = ({
             handleIframeReady(iframeRef.current);
         }
     };
+
+    // Register the iframe element early so parent can listen before iframe app posts READY.
+    useEffect(() => {
+        if (iframeRef.current) {
+            handleIframeReady(iframeRef.current);
+        }
+    }, [handleIframeReady]);
     
     return (
         <div

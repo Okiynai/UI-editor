@@ -86,7 +86,9 @@ export interface ChangePagePayload {
 }
 
 export interface InternalNavigationPayload {
-  url: string;
+  url?: string;
+  navigationType?: 'push' | 'replace' | 'back' | 'forward' | 'reload';
+  action?: 'push' | 'replace' | 'back' | 'forward' | 'reload';
   routeParams?: Record<string, string>;
 }
 
@@ -188,7 +190,10 @@ export interface BuilderDataChangedPayload {
 export class IframeCommunicationManager {
   private iframe: HTMLIFrameElement | null = null;
   private messageHandlers: Map<string, (payload: any) => void> = new Map();
+  private lastMessages: Map<string, any> = new Map();
   private isReady: boolean = false;
+  private pendingReadyMessages: ParentToIframeMessage[] = [];
+  private messageListener: ((event: MessageEvent) => void) | null = null;
 	private pendingContextResolvers = new Map<string, (state: any) => void>();
   private pendingActionResolvers = new Map<string, { resolve: (payload: any) => void; reject: (err: any) => void; timeoutHandle: number }>();
 
@@ -209,15 +214,23 @@ export class IframeCommunicationManager {
   }
 
   private setupEventListener() {
-    window.addEventListener('message', (event) => {
+    if (this.messageListener) {
+      return;
+    }
+
+    this.messageListener = (event) => {
       // Validate origin in production
       // if (event.origin !== 'http://localhost:3000') return;
       
       const message = event.data as IframeToParentMessage;
+      if (message?.type) {
+        this.lastMessages.set(message.type, message.payload);
+      }
       
       // Handle ready state
       if (message.type === 'READY') {
         this.isReady = true;
+        this.flushPendingReadyMessages();
       }
       
       // Resolve pending action promises for unified tool feedback
@@ -246,8 +259,30 @@ export class IframeCommunicationManager {
       if (handler) {
         handler(message.payload);
       }
+    };
+
+    window.addEventListener('message', this.messageListener);
+  }
+  private flushPendingReadyMessages() {
+    if (!this.isReady || this.pendingReadyMessages.length === 0) {
+      return;
+    }
+
+    const pending = [...this.pendingReadyMessages];
+    this.pendingReadyMessages = [];
+    pending.forEach((message) => {
+      this.postToIframe(message);
     });
   }
+
+  private postToIframe(message: ParentToIframeMessage) {
+    if (!this.iframe?.contentWindow) {
+      console.warn('Iframe not ready for communication');
+      return;
+    }
+    this.iframe.contentWindow.postMessage(message, '*');
+  }
+
   private waitForActionResult(actionId: string, timeoutMs = 10000): Promise<any> {
     return new Promise((resolve, reject) => {
       const timeoutHandle = window.setTimeout(() => {
@@ -287,6 +322,9 @@ export class IframeCommunicationManager {
   // Register handlers for messages from iframe
   on(type: IframeToParentMessage['type'], handler: (payload: any) => void) {
     this.messageHandlers.set(type, handler);
+    if (this.lastMessages.has(type)) {
+      handler(this.lastMessages.get(type));
+    }
   }
 
   // Remove a specific handler
@@ -294,15 +332,24 @@ export class IframeCommunicationManager {
     this.messageHandlers.delete(type);
   }
 
+  setIframe(iframe: HTMLIFrameElement) {
+    this.iframe = iframe;
+  }
+
   // Send messages to iframe
-  send(type: ParentToIframeMessage['type'], payload?: any) {
-    if (!this.iframe?.contentWindow) {
-      console.warn('Iframe not ready for communication');
+  send(type: ParentToIframeMessage['type'], payload?: any, options?: { requiresReady?: boolean }) {
+    const message: ParentToIframeMessage = { type, payload };
+    const requiresReady = options?.requiresReady === true;
+
+    if (requiresReady && !this.isReady) {
+      if (type === 'CHANGE_PAGE') {
+        this.pendingReadyMessages = this.pendingReadyMessages.filter((msg) => msg.type !== 'CHANGE_PAGE');
+      }
+      this.pendingReadyMessages.push(message);
       return;
     }
 
-    const message: ParentToIframeMessage = { type, payload };
-    this.iframe.contentWindow.postMessage(message, '*');
+    this.postToIframe(message);
   }
 
   // Check if iframe is ready
@@ -316,7 +363,7 @@ export class IframeCommunicationManager {
   }
 
   changePage(pageRoute: string, shopSubdomain: string) {
-    this.send('CHANGE_PAGE', { pageRoute, shopSubdomain } as ChangePagePayload);
+    this.send('CHANGE_PAGE', { pageRoute, shopSubdomain } as ChangePagePayload, { requiresReady: true });
   }
 
   toggleInspectMode(enabled: boolean) {
@@ -437,7 +484,13 @@ export class IframeCommunicationManager {
   }
 
   cleanup() {
+    if (this.messageListener) {
+      window.removeEventListener('message', this.messageListener);
+      this.messageListener = null;
+    }
     this.messageHandlers.clear();
+    this.lastMessages.clear();
+    this.pendingReadyMessages = [];
     this.iframe = null;
     this.isReady = false;
   }

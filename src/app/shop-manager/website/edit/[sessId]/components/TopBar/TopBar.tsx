@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { LogOut, Undo2, Redo2, SquareMousePointer, Eye, EyeOff } from 'lucide-react';
+import { Undo2, Redo2, SquareMousePointer, Eye, EyeOff } from 'lucide-react';
 import { PageDropdown } from './PageDropdown';
 import { LocaleDropdown } from './LocaleDropdown';
 import { ScreenSizeControls } from './ScreenSizeControls';
@@ -65,6 +65,7 @@ export const TopBar = ({
     const [topBarHeight, setTopBarHeight] = useState(56);
     const [isPreviewBarVisible, setIsPreviewBarVisible] = useState(true);
     const [isHoveringTopBar, setIsHoveringTopBar] = useState(false);
+    const hideTimerRef = useRef<number | null>(null);
 
     // used in the preview function.
     const [localTmpInspectMode, setLocalTmpInspectMode] = useState(isInspectMode);
@@ -114,14 +115,61 @@ export const TopBar = ({
             return;
         }
 
-        const handleMouseMove = (event: MouseEvent) => {
-            const triggerHeight = Math.max(0, topBarHeight / 2);
-            const shouldShow = event.clientY <= triggerHeight || isHoveringTopBar;
-            setIsPreviewBarVisible(shouldShow);
+        const triggerHeight = Math.max(0, topBarHeight / 2);
+        const hideDelay = 200;
+
+        const clearHideTimer = () => {
+            if (hideTimerRef.current) {
+                window.clearTimeout(hideTimerRef.current);
+                hideTimerRef.current = null;
+            }
         };
 
-        window.addEventListener('mousemove', handleMouseMove);
-        return () => window.removeEventListener('mousemove', handleMouseMove);
+        const scheduleHide = () => {
+            clearHideTimer();
+            hideTimerRef.current = window.setTimeout(() => {
+                if (!isHoveringTopBar) setIsPreviewBarVisible(false);
+            }, hideDelay);
+        };
+
+        const handleMove = (event: MouseEvent) => {
+            if (event.clientY <= triggerHeight || isHoveringTopBar) {
+                clearHideTimer();
+                setIsPreviewBarVisible(true);
+            } else {
+                scheduleHide();
+            }
+        };
+
+        const handleLeave = () => {
+            if (!isHoveringTopBar) scheduleHide();
+        };
+
+        window.addEventListener('mousemove', handleMove);
+        window.addEventListener('mouseleave', handleLeave);
+
+        const iframe = document.querySelector<HTMLIFrameElement>('#preview-area iframe');
+        const iframeWindow = iframe?.contentWindow;
+        const iframeDoc = iframeWindow?.document;
+
+        if (iframeWindow && iframeDoc) {
+            iframeWindow.addEventListener('mousemove', handleMove);
+            iframeWindow.addEventListener('mouseleave', handleLeave);
+            iframeDoc.addEventListener('mousemove', handleMove);
+            iframeDoc.addEventListener('mouseleave', handleLeave);
+        }
+
+        return () => {
+            window.removeEventListener('mousemove', handleMove);
+            window.removeEventListener('mouseleave', handleLeave);
+            if (iframeWindow && iframeDoc) {
+                iframeWindow.removeEventListener('mousemove', handleMove);
+                iframeWindow.removeEventListener('mouseleave', handleLeave);
+                iframeDoc.removeEventListener('mousemove', handleMove);
+                iframeDoc.removeEventListener('mouseleave', handleLeave);
+            }
+            clearHideTimer();
+        };
     }, [isPreview, topBarHeight, isHoveringTopBar]);
 
     return (
@@ -131,7 +179,7 @@ export const TopBar = ({
                 ref={topBarRef}
                 onMouseEnter={() => setIsHoveringTopBar(true)}
                 onMouseLeave={() => setIsHoveringTopBar(false)}
-                className={`h-14 bg-white border-b border-gray-100 flex items-center justify-between px-4 transition-transform duration-200 ${
+                className={`h-14 bg-white border-b border-gray-100 flex items-center justify-between px-4 transition-all duration-200 ${
                     isPreview
                         ? `fixed top-0 left-0 right-0 z-40 ${
                             isPreviewBarVisible ? 'translate-y-0 opacity-100 pointer-events-auto' : '-translate-y-full opacity-0 pointer-events-none'
@@ -141,14 +189,6 @@ export const TopBar = ({
             >
                 {/* Left Section */}
                 <div className="flex items-center space-x-3 min-w-0">
-                    <button 
-                        onClick={() => window.location.href = '/shop-manager/website/general-settings'}
-                        className="text-gray-500 hover:text-gray-700 transition-colors p-1" 
-                        title="Exit Builder"
-                    >
-                        <LogOut size={18} className="rotate-180" />
-                    </button>
-                    
                     <PageDropdown
                         selectedPage={selectedPage}
                         userPages={userPages}
@@ -236,7 +276,7 @@ export const TopBar = ({
                         onClick={handleInspectClick}
                         className={`ml-5 transition-colors disabled:opacity-50 disabled:pointer-events-none ${
                             isInspectMode 
-                                ? 'text-blue-600 hover:text-blue-700' 
+                                ? 'text-blue-500 hover:text-blue-600' 
                                 : 'text-gray-500 hover:text-gray-700'
                         }`} 
                         title={isInspectMode ? "Exit Inspect Mode" : "Inspect Element"}

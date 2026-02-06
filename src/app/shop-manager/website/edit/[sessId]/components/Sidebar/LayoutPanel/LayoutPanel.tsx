@@ -29,17 +29,25 @@ import { useAtom } from 'jotai';
 import { layoutDebugModeAtom } from '@/store/editor';
 import { useIframeCommunicationContext } from '../../../context/IframeCommunicationContext';
 import SmartishEditor from '../../SmartishEditor/SmartishEditor';
+import { SectionPickerModal } from '../../shared/SectionPickerModal';
+import { toast } from '@/components/toast/toast';
 
 
 // Context Menu Component
 const ContextMenu = ({ 
     node, 
     position, 
-    onClose
+    onClose,
+    onInsertBefore,
+    onInsertAfter,
+    onInsertInto
 }: {
     node: Node;
     position: { x: number; y: number };
     onClose: () => void;
+    onInsertBefore: (node: Node) => void;
+    onInsertAfter: (node: Node) => void;
+    onInsertInto: (node: Node) => void;
 }) => {
     const handleRename = () => {
         // TODO: Implement rename functionality
@@ -60,20 +68,17 @@ const ContextMenu = ({
     };
 
     const handleInsertBefore = () => {
-        // TODO: Implement insert before functionality
-        console.log('Insert before node:', node.id);
+        onInsertBefore(node);
         onClose();
     };
 
     const handleInsertAfter = () => {
-        // TODO: Implement insert after functionality
-        console.log('Insert after node:', node.id);
+        onInsertAfter(node);
         onClose();
     };
 
     const handleInsertInto = () => {
-        // TODO: Implement insert into functionality
-        console.log('Insert into node:', node.id);
+        onInsertInto(node);
         onClose();
     };
 
@@ -253,7 +258,7 @@ const TreeNode = React.memo(({
                 )}
                 {/* Node name */}
                 <span 
-                    className={`${FontVar.variable} flex-1 max-w-[80%] truncate text-[#595959]`}
+                    className="flex-1 max-w-[80%] truncate text-[#595959]"
                     title={node.name || node.id}
                     style={{ fontFamily: 'var(--font-body)' }}
                 >
@@ -292,12 +297,16 @@ const TreeNode = React.memo(({
 TreeNode.displayName = 'TreeNode';
 
 // Node List Component - Optimized
-const NodeList = React.memo(({ nodes, onNodeSelect, onNodeHover, panelWidth, hoveredNodeId }: { 
+const NodeList = React.memo(({ nodes, onNodeSelect, onNodeHover, panelWidth, hoveredNodeId, onInsertBefore, onInsertAfter, onInsertInto, onAddSection }: { 
     nodes: Node[], 
     onNodeSelect: (node: Node) => void, 
     onNodeHover: (nodeId: string | null) => void,
     panelWidth: number,
-    hoveredNodeId: string | null
+    hoveredNodeId: string | null,
+    onInsertBefore: (node: Node) => void,
+    onInsertAfter: (node: Node) => void,
+    onInsertInto: (node: Node) => void,
+    onAddSection: (anchorRect?: DOMRect) => void
 }) => {
     const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
     const [contextMenu, setContextMenu] = useState<{ node: Node; position: { x: number; y: number } } | null>(null);
@@ -366,6 +375,17 @@ const NodeList = React.memo(({ nodes, onNodeSelect, onNodeHover, panelWidth, hov
                     />
                 ))}
             </div>
+
+            <div className="pt-2 pr-3">
+                <button
+                    type="button"
+                    onClick={(e) => onAddSection((e.currentTarget as HTMLButtonElement).getBoundingClientRect())}
+                    className="w-full inline-flex items-center justify-center gap-2 rounded-md border border-gray-200 bg-white px-2 py-2 text-xs font-semibold text-[#595959] hover:bg-gray-50 transition-colors"
+                >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add section
+                </button>
+            </div>
             
             {/* Context Menu */}
             {contextMenu && (
@@ -373,6 +393,9 @@ const NodeList = React.memo(({ nodes, onNodeSelect, onNodeHover, panelWidth, hov
                     node={contextMenu.node}
                     position={contextMenu.position}
                     onClose={() => setContextMenu(null)}
+                    onInsertBefore={onInsertBefore}
+                    onInsertAfter={onInsertAfter}
+                    onInsertInto={onInsertInto}
                 />
             )}
         </div>
@@ -405,7 +428,7 @@ export const LayoutPanel = ({
     siteSettings,
     onActivePanelChange
 }: LayoutPanelProps) => {
-    const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+    const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
     const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
     const [layoutDebugMode] = useAtom(layoutDebugModeAtom);
     const [panelWidth, setPanelWidth] = useState(300); // Default width
@@ -414,6 +437,137 @@ export const LayoutPanel = ({
     const contextMenuRef = useRef<HTMLDivElement>(null);
 
     const { iframeCommunicationManager } = useIframeCommunicationContext();
+    const [sectionPickerState, setSectionPickerState] = useState<{
+        open: boolean;
+        mode: 'root' | 'before' | 'after' | 'into';
+        targetNode?: Node;
+        anchorRect?: { top: number; left: number; width: number; height: number };
+    }>({ open: false, mode: 'root' });
+
+    const openSectionPicker = useCallback((mode: 'root' | 'before' | 'after' | 'into', targetNode?: Node, anchorRect?: DOMRect) => {
+        setSectionPickerState({
+            open: true,
+            mode,
+            targetNode,
+            anchorRect: anchorRect
+                ? {
+                    top: anchorRect.top,
+                    left: anchorRect.left,
+                    width: anchorRect.width,
+                    height: anchorRect.height
+                }
+                : undefined
+        });
+    }, []);
+
+    const closeSectionPicker = useCallback(() => {
+        setSectionPickerState((prev) => ({ ...prev, open: false }));
+    }, []);
+
+    const getAppendOrder = useCallback((nodes: Node[]) => {
+        if (!nodes.length) return 0;
+        const maxOrder = Math.max(...nodes.map((node: any) => Number.isFinite(node.order) ? node.order : 0));
+        return maxOrder + 1;
+    }, []);
+
+    const findParentInfo = useCallback((nodes: Node[], targetId: string, parentId: string = 'root'): { parentId: string; siblings: Node[] } | null => {
+        for (const node of nodes) {
+            if (node.id === targetId) {
+                return { parentId, siblings: nodes };
+            }
+            if ('children' in node && (node as SectionNode).children?.length) {
+                const result = findParentInfo((node as SectionNode).children as Node[], targetId, node.id);
+                if (result) return result;
+            }
+        }
+        return null;
+    }, []);
+
+    const getInsertOrder = useCallback((siblings: Node[], targetId: string, position: 'before' | 'after') => {
+        const sorted = [...siblings].sort((a: any, b: any) => (Number.isFinite(a.order) ? a.order : 0) - (Number.isFinite(b.order) ? b.order : 0));
+        const index = sorted.findIndex((node) => node.id === targetId);
+        const current = sorted[index];
+        if (!current) return getAppendOrder(sorted);
+
+        if (position === 'before') {
+            const prev = sorted[index - 1];
+            if (!prev) return (Number.isFinite(current.order) ? current.order : 0) - 1;
+            const candidate = ((Number.isFinite(prev.order) ? prev.order : 0) + (Number.isFinite(current.order) ? current.order : 0)) / 2;
+            return candidate === prev.order || candidate === current.order ? (Number.isFinite(current.order) ? current.order : 0) - 1 : candidate;
+        }
+
+        const next = sorted[index + 1];
+        if (!next) return (Number.isFinite(current.order) ? current.order : 0) + 1;
+        const candidate = ((Number.isFinite(next.order) ? next.order : 0) + (Number.isFinite(current.order) ? current.order : 0)) / 2;
+        return candidate === next.order || candidate === current.order ? (Number.isFinite(current.order) ? current.order : 0) + 1 : candidate;
+    }, [getAppendOrder]);
+
+    const findNodeById = useCallback((nodes: Node[] = [], targetId: string): Node | null => {
+        for (const node of nodes) {
+            if (node.id === targetId) {
+                return node;
+            }
+            if ('children' in node && (node as SectionNode).children?.length) {
+                const found = findNodeById((node as SectionNode).children as Node[], targetId);
+                if (found) return found;
+            }
+        }
+        return null;
+    }, []);
+
+    // Always resolve the selected node from the latest pageDefinition to avoid stale editor state.
+    const selectedNode = useMemo(() => {
+        if (!selectedNodeId || !pageDefinition?.nodes) return null;
+        return findNodeById(pageDefinition.nodes, selectedNodeId);
+    }, [selectedNodeId, pageDefinition?.nodes, findNodeById]);
+
+    // Clear stale selection when page changes or selected node disappears.
+    useEffect(() => {
+        if (selectedNodeId && !selectedNode) {
+            setSelectedNodeId(null);
+        }
+    }, [selectedNodeId, selectedNode]);
+
+    const handleSectionInsert = useCallback(async (sectionId: string, label: string) => {
+        if (!iframeCommunicationManager || !pageDefinition) {
+            toast.error('Editor is not ready to insert sections yet.');
+            return;
+        }
+
+        let parentId = 'root';
+        let order = getAppendOrder(pageDefinition.nodes || []);
+
+        if (sectionPickerState.mode !== 'root') {
+            const targetNode = sectionPickerState.targetNode;
+            if (!targetNode) {
+                toast.error('No target selected for insertion.');
+                return;
+            }
+
+            if (sectionPickerState.mode === 'into') {
+                parentId = targetNode.id;
+                const children = (targetNode as SectionNode).children || [];
+                order = getAppendOrder(children as Node[]);
+            } else {
+                const parentInfo = findParentInfo(pageDefinition.nodes || [], targetNode.id);
+                if (!parentInfo) {
+                    toast.error('Could not locate insertion target.');
+                    return;
+                }
+                parentId = parentInfo.parentId;
+                order = getInsertOrder(parentInfo.siblings, targetNode.id, sectionPickerState.mode);
+            }
+        }
+
+        try {
+            await iframeCommunicationManager.addPreBuiltSectionAwaitable(sectionId, parentId, label, order);
+            toast.success(`Added ${label}`);
+            closeSectionPicker();
+        } catch (error: any) {
+            const message = error instanceof Error ? error.message : 'Failed to add section.';
+            toast.error(message);
+        }
+    }, [closeSectionPicker, findParentInfo, getAppendOrder, getInsertOrder, iframeCommunicationManager, pageDefinition, sectionPickerState.mode, sectionPickerState.targetNode]);
 
     // Effect to listen for messages from iframe
     useEffect(() => {
@@ -426,7 +580,7 @@ export const LayoutPanel = ({
                 // set selected node to the node that is being edited
                 console.log('[LayoutPanel] Editing node:', node);
                 if(node) {
-                    setSelectedNode(node);
+                    setSelectedNodeId(node.id);
                 }
 
                 onActivePanelChange("layout");
@@ -443,20 +597,6 @@ export const LayoutPanel = ({
     // Effect for hover interactions
     useEffect(() => {
         if (hoveredNodeId && pageDefinition?.nodes) {
-            // Find the actual node object from the hoveredNodeId
-            const findNodeById = (nodes: Node[], targetId: string): Node | null => {
-                for (const node of nodes) {
-                    if (node.id === targetId) {
-                        return node;
-                    }
-                    if ('children' in node && node.children) {
-                        const found = findNodeById(node.children as Node[], targetId);
-                        if (found) return found;
-                    }
-                }
-                return null;
-            };
-
             const hoveredNode = findNodeById(pageDefinition.nodes, hoveredNodeId);
             if (hoveredNode && iframeCommunicationManager) {
                 iframeCommunicationManager.sendLayoutNodeInteraction({
@@ -465,7 +605,7 @@ export const LayoutPanel = ({
                 });
             }
         }
-    }, [hoveredNodeId, pageDefinition, iframeCommunicationManager]);
+    }, [hoveredNodeId, pageDefinition, iframeCommunicationManager, findNodeById]);
 
     // Effect for select interactions
     useEffect(() => {
@@ -496,6 +636,22 @@ export const LayoutPanel = ({
         console.log('Delete node:', selectedNode?.id);
         setShowContextMenu(false);
     };
+
+    const handleInsertBefore = useCallback((node: Node) => {
+        openSectionPicker('before', node);
+    }, [openSectionPicker]);
+
+    const handleInsertAfter = useCallback((node: Node) => {
+        openSectionPicker('after', node);
+    }, [openSectionPicker]);
+
+    const handleInsertInto = useCallback((node: Node) => {
+        openSectionPicker('into', node);
+    }, [openSectionPicker]);
+
+    const handleInsertRoot = useCallback((anchorRect?: DOMRect) => {
+        openSectionPicker('root', undefined, anchorRect);
+    }, [openSectionPicker]);
 
     // Close context menu when clicking outside
     useEffect(() => {
@@ -574,17 +730,28 @@ export const LayoutPanel = ({
             return (
                 <NodeList 
                     nodes={sortedNodes} 
-                    onNodeSelect={setSelectedNode}
+                    onNodeSelect={(node) => setSelectedNodeId(node.id)}
                     onNodeHover={setHoveredNodeId}
                     panelWidth={panelWidth}
                     hoveredNodeId={hoveredNodeId}
+                    onInsertBefore={handleInsertBefore}
+                    onInsertAfter={handleInsertAfter}
+                    onInsertInto={handleInsertInto}
+                    onAddSection={handleInsertRoot}
                 />
             );
         }
 
         return (
-            <div className="text-gray-500 text-center text-sm flex items-center justify-center h-full">
-                No page structure data yet. Make changes in the editor to see the hierarchy here.
+            <div className="py-3 pr-3">
+                <button
+                    type="button"
+                    onClick={(e) => handleInsertRoot((e.currentTarget as HTMLButtonElement).getBoundingClientRect())}
+                    className="w-full inline-flex items-center justify-center gap-2 rounded-md border border-gray-200 bg-white px-2 py-2 text-xs font-semibold text-[#595959] hover:bg-gray-50 transition-colors"
+                >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add section
+                </button>
             </div>
         );
     };
@@ -596,11 +763,11 @@ export const LayoutPanel = ({
             {(pageDefinition?.name || selectedNode) && (
                 <div className={`p-4 border-b border-gray-200 ${selectedNode ? 'pl-2' : ''}`}>
                     <div className="flex flex-col overflow-hidden">
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
+                        <div className="flex items-center">
+                        <div className="flex items-center gap-2">
                             {selectedNode && (
                                 <button
-                                    onClick={() => setSelectedNode(null)}
+                                    onClick={() => setSelectedNodeId(null)}
                                     className="relative top-px flex items-center justify-center w-6 h-6 text-[#595959] hover:bg-gray-200 rounded transition-colors">
                                     <ChevronLeft className="w-4 h-4" strokeWidth={2} />
                                 </button>
@@ -609,39 +776,6 @@ export const LayoutPanel = ({
                                 {selectedNode ? selectedNode.name || selectedNode.id : pageDefinition.name}
                             </h2>
                         </div>
-
-                        {/* Three dots menu - only show when editing a node */}
-                        {selectedNode && (
-                            <div className="flex flex-col relative top-0.5"
-                            ref={contextMenuRef}>
-                                <button
-                                    onClick={() => setShowContextMenu(!showContextMenu)}
-                                    className="flex items-center justify-center w-6 h-6 text-[#595959] hover:bg-gray-200 rounded transition-colors"
-                                >
-                                    <MoreHorizontal className="w-5 h-5" strokeWidth={2} />
-                                </button>
-
-                                {/* Context menu dropdown */}
-                                {showContextMenu && (
-                                    <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg min-w-[120px] z-50">
-                                        <button
-                                            onClick={handleRename}
-                                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
-                                        >
-                                            <Edit className="w-4 h-4 text-blue-600" />
-                                            Rename
-                                        </button>
-                                        <button
-                                            onClick={handleDelete}
-                                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
-                                        >
-                                            <Trash2 className="w-4 h-4 text-red-600" />
-                                            Delete
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                            )}
                         </div>
                     </div>
                     {layoutDebugMode === 'raw' && (
@@ -661,6 +795,14 @@ export const LayoutPanel = ({
                 {renderBodyContent()}
             </div>
             )}
+
+            <SectionPickerModal
+                isOpen={sectionPickerState.open}
+                onClose={closeSectionPicker}
+                onSelect={handleSectionInsert}
+                siteSettings={siteSettings}
+                anchorRect={sectionPickerState.anchorRect}
+            />
             
         </div>
     );
