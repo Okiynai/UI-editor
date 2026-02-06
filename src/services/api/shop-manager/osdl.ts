@@ -11,6 +11,7 @@ const PAGES_KEY = 'osdl-demo-pages';
 const DB_NAME = 'osdl-demo-store';
 const DB_VERSION = 1;
 const STORE_NAME = 'kv';
+const FORCE_DEFAULT_DEMO = true;
 
 type KVRecord = {
   key: string;
@@ -137,7 +138,7 @@ const loadSettings = async (): Promise<SiteSettings> => {
     name: 'Demo Shop',
     defaultLocale: 'en-US',
     supportedLocales: ['en-US'],
-    globalStyleVariables: { colors: {}, fonts: {}, spacing: {}, breakpoints: { mobile: 480, tablet: 768, desktop: 1024 } },
+    globalStyleVariables: { colors: { primary: '#1B3258' }, fonts: {}, spacing: {}, breakpoints: { mobile: 480, tablet: 768, desktop: 1024 } },
     seo: {}
   } as SiteSettings;
 };
@@ -147,6 +148,10 @@ const saveSettings = async (s: SiteSettings) => {
 };
 
 const loadPages = async (): Promise<PageDefinition[]> => {
+  if (FORCE_DEFAULT_DEMO) {
+    return [getDemoPageDefinition({ subdomain: 'demo', path: '/' })];
+  }
+
   const pages = await readKV<PageDefinition[]>(PAGES_KEY);
   if (pages && Array.isArray(pages)) return pages;
   const demo = getDemoPageDefinition({ subdomain: 'demo', path: '/' });
